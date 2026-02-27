@@ -307,7 +307,7 @@ class ThumbnailView(Gtk.Box):
         self._flow.queue_resize()
         # Save config (debounced by the slider)
         self._window._save_config()
-    
+
     def _resort_images(self) -> None:
         """Re-sort images with the current sort mode and reload."""
         sorted_images = sort_images(self._images, self._config.sort)
