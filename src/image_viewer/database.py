@@ -17,27 +17,18 @@ from typing import Optional
 from .models import ImageInfo
 
 
-# Database filename stored alongside images
+# App root directory (parent of the src directory)
+APP_ROOT = Path(__file__).parent.parent.parent.resolve()
+
+# Database filename stored in app root directory
 DB_FILENAME = ".image-viewer.db"
-
-# Fallback config directory
-CONFIG_DIR = Path.home() / ".config" / "image-viewer"
+DB_PATH = APP_ROOT / DB_FILENAME
 
 
-def _get_db_path(base_dir: str) -> Path:
-    """Determine the database path for a given base directory.
-
-    Prefers placing the DB in the base_dir itself. Falls back to the
-    config directory if base_dir is not writable.
-    """
-    local_db = Path(base_dir) / DB_FILENAME
-    # Check if we can write to the directory
-    if os.access(base_dir, os.W_OK):
-        return local_db
-    # Fallback: use config dir with a hash of the path
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    path_hash = hashlib.sha256(base_dir.encode()).hexdigest()[:16]
-    return CONFIG_DIR / f"{path_hash}.db"
+def _get_db_path() -> Path:
+    """Get the database path in the app root directory."""
+    APP_ROOT.mkdir(parents=True, exist_ok=True)
+    return DB_PATH
 
 
 _CREATE_TABLE_SQL = """
@@ -64,11 +55,11 @@ CREATE INDEX IF NOT EXISTS idx_viewed ON images(viewed);
 
 
 class Database:
-    """Manages the SQLite database for a single base directory."""
+    """Manages the SQLite database for the app."""
 
     def __init__(self, base_dir: str) -> None:
         self.base_dir = os.path.abspath(base_dir)
-        self.db_path = _get_db_path(self.base_dir)
+        self.db_path = _get_db_path()
         self._conn: Optional[sqlite3.Connection] = None
 
     def connect(self) -> None:

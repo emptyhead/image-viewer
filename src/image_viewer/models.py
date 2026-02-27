@@ -87,6 +87,7 @@ class AppConfig:
 
     # Thumbnail view
     thumbnail_size: int = 200
+    thumbnail_cache_size: int = 128  # Size in pixels for cached thumbnails
     sort: str = "unviewed"  # alpha|directory|unviewed|viewed|rating|rating-desc
 
     # Slideshow

@@ -14,8 +14,8 @@ from typing import Any
 from .models import AppConfig
 from .sorting import SORT_NAMES
 
-# App root directory (parent of the image_viewer package)
-APP_ROOT = Path(__file__).parent.parent.resolve()
+# App root directory (parent of the src directory)
+APP_ROOT = Path(__file__).parent.parent.parent.resolve()
 CONFIG_DIR = APP_ROOT
 CONFIG_FILE = APP_ROOT / "config.toml"
 
@@ -24,6 +24,7 @@ _DEFAULT_CONFIG_TOML = """\
 recursive = true
 sort = "unviewed"
 thumbnail_size = 200
+thumbnail_cache_size = 128
 slideshow_time = 5.0
 slideshow_order = "forward"
 loop = false
@@ -119,6 +120,8 @@ def load_config() -> AppConfig:
                 config.sort = sort_val
         if "thumbnail_size" in defaults:
             config.thumbnail_size = int(defaults["thumbnail_size"])
+        if "thumbnail_cache_size" in defaults:
+            config.thumbnail_cache_size = int(defaults["thumbnail_cache_size"])
         if "slideshow_time" in defaults:
             config.slideshow_time = float(defaults["slideshow_time"])
         if "slideshow_order" in defaults:
@@ -142,6 +145,11 @@ def load_config() -> AppConfig:
     return config
 
 
+def get_default_config() -> AppConfig:
+    """Return a new AppConfig with all default values."""
+    return AppConfig()
+
+
 def save_config(config: AppConfig) -> None:
     """Save configuration to the config file."""
     ensure_config_dir()
@@ -152,6 +160,7 @@ def save_config(config: AppConfig) -> None:
         f"recursive = {str(config.recursive).lower()}",
         f'sort = "{config.sort}"',
         f"thumbnail_size = {config.thumbnail_size}",
+        f"thumbnail_cache_size = {config.thumbnail_cache_size}",
         f"slideshow_time = {config.slideshow_time}",
         f'slideshow_order = "{config.slideshow_order}"',
         f"loop = {str(config.loop).lower()}",

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from typing import Optional, TYPE_CHECKING
 
 import gi
@@ -145,6 +146,10 @@ class ThumbnailView(Gtk.Box):
         self._selected_index: int = 0
         self._columns: int = 1
         self._loading_cancelled: bool = False  # Flag to stop background thumbnail loading
+        self._size_timer_id: int | None = None  # Timer for periodic column check during resize
+        self._size_idle_id: int | None = None  # Idle callback for stopping the timer
+        self._fixed_width: int | None = None  # Fixed width for column calculation during resize
+        self._last_column_update: float = 0  # Timestamp of last column update for throttling
 
         # Toolbar
         toolbar = self._build_toolbar()
@@ -299,14 +304,87 @@ class ThumbnailView(Gtk.Box):
         """Handle thumbnail size change - update display size in real-time."""
         new_size = int(scale.get_value())
         self._config.thumbnail_size = new_size
-        # Update the picture size request for each tile - this should be enough
-        # for GTK to naturally reflow without forcing column counts
-        for tile in self._tiles:
+        
+        # Update the picture size request for each tile and its container
+        for i, tile in enumerate(self._tiles):
             tile.set_size_request(new_size)
-        # Just queue resize - no column calculation
+            # Also update the FlowBoxChild size
+            fb_child = self._flow.get_child_at_index(i)
+            if fb_child:
+                fb_child.set_size_request(new_size, new_size)
+        # Queue resize to trigger GTK's natural reflow
         self._flow.queue_resize()
         # Save config (debounced by the slider)
         self._window._save_config()
+
+        # Start periodic column check if not already running
+        if self._size_timer_id is None:
+            self._size_timer_id = GLib.timeout_add(100, self._update_columns_periodic)
+
+        # Cancel any pending stop and schedule a new one
+        if self._size_idle_id is not None:
+            GLib.source_remove(self._size_idle_id)
+        # Use a longer delay to avoid resetting too frequently
+        self._size_idle_id = GLib.idle_add(self._stop_size_timer_delayed)
+
+    def _stop_size_timer_delayed(self) -> bool:
+        """Stop the periodic column check after a delay (called via idle)."""
+        self._size_idle_id = None
+        # Wait a bit then stop the timer and reset fixed width
+        def stop_and_reset():
+            self._stop_size_timer()
+            self._fixed_width = None
+            print("[DEBUG] Reset fixed width")
+            return False
+        GLib.timeout_add(200, stop_and_reset)
+        return False
+
+    def _update_columns_periodic(self) -> bool:
+        """Periodically check and update column count during slider drag (throttled)."""
+        # Throttle: only update every 300ms
+        current_time = time.time()
+        if current_time - self._last_column_update < 0.3:
+            return True  # Keep timer running
+        
+        self._last_column_update = current_time
+        self._update_column_count()
+        # Keep timer running - it will be stopped by _stop_size_timer
+        return True
+
+    def _stop_size_timer(self) -> None:
+        """Stop the periodic column check timer."""
+        if self._size_timer_id is not None:
+            GLib.source_remove(self._size_timer_id)
+            self._size_timer_id = None
+
+    def _update_column_count(self) -> None:
+        """Calculate column count based on current window width.
+        
+        This is called periodically during slider drag to update the column count
+        for keyboard navigation. GTK handles the natural reflow.
+        """
+        # Get the current width of the scrolled window
+        scroll_width = self._scrolled.get_width()
+        if scroll_width <= 0:
+            return
+
+        # Force a reflow by invalidating filter and sort
+        self._flow.invalidate_filter()
+        self._flow.invalidate_sort()
+        self._flow.queue_resize()
+
+        # Calculate tile width including margins and spacing
+        tile_width = self._config.thumbnail_size + 8 + 4
+
+        # Calculate how many columns can fit
+        columns = max(1, int(scroll_width / tile_width))
+        columns = min(columns, 100)
+
+        # Only update if column count changed
+        if columns != self._columns:
+            print(f"[DEBUG] Columns: {self._columns} -> {columns} (width={scroll_width}, tile={tile_width})")
+            self._columns = columns
+            # Let GTK handle natural reflow - no forced min/max
 
     def _resort_images(self) -> None:
         """Re-sort images with the current sort mode and reload."""
@@ -410,10 +488,41 @@ class ThumbnailView(Gtk.Box):
             self._flow.append(fb_child)
             self._tiles.append(tile)
 
-        # Load thumbnails asynchronously
+        # Load initial thumbnails immediately
+        self._load_initial_thumbnails()
+        # Load remaining thumbnails in background
         self._load_thumbnails_async()
 
     def _load_thumbnails_async(self) -> None:
+    """Load thumbnail images in a background thread with parallel processing."""
+    self._loading_cancelled = False  # Reset cancellation flag
+    images_to_load = list(enumerate(self._images))
+
+    # Use thread pool to load thumbnails in parallel
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {executor.submit(self._load_thumbnail, img, idx): idx for idx, img in images_to_load}
+        for future in as_completed(futures):
+            idx = futures[future]
+            try:
+                pixbuf = future.result()
+                self._tiles[idx].set_pixbuf(pixbuf)
+            except Exception as e:
+                print(f"Error loading thumbnail {idx}: {e}")
+
+    # Update UI to show progress
+    self._update_status("Loading thumbnails in background...")
+
+    # Start periodic column check if not already running
+    if self._size_timer_id is None:
+        self._size_timer_id = GLib.timeout_add(100, self._update_columns_periodic)
+
+    # Cancel any pending stop and schedule a new one
+    if self._size_idle_id is not None:
+        GLib.source_remove(self._size_idle_id)
+    self._size_idle_id = GLib.idle_add(self._stop_size_timer_delayed)
+
+    # Update UI to show progress
+    self._update_status("Loading thumbnails in background...")
         """Load thumbnail images in a background thread."""
         self._loading_cancelled = False  # Reset cancellation flag
         images_to_load = list(enumerate(self._images))
@@ -427,6 +536,7 @@ class ThumbnailView(Gtk.Box):
                     img.filepath,
                     img.file_modified,
                     self._config.thumbnail_size,
+                    self._config.thumbnail_cache_size,
                 )
                 if self._loading_cancelled:
                     return

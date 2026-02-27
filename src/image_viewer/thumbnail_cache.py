@@ -26,11 +26,11 @@ CACHE_THUMBNAIL_SIZE = 128
 CACHE_FOLDER = ".thumbnails"
 
 
-def _cache_key(filepath: str, mtime: float) -> str:
-    """Generate a unique cache filename for an image based on filename and mtime."""
-    # Use just the filename and mtime for the key
+def _cache_key(filepath: str, mtime: float, cache_size: int = CACHE_THUMBNAIL_SIZE) -> str:
+    """Generate a unique cache filename for an image based on filename, mtime, and cache size."""
+    # Include cache_size in the key so different cache sizes don't overwrite each other
     filename = os.path.basename(filepath)
-    key = f"{filename}:{mtime}"
+    key = f"{filename}:{mtime}:{cache_size}"
     return hashlib.sha256(key.encode()).hexdigest() + ".jpg"
 
 
@@ -46,16 +46,18 @@ def get_or_create_thumbnail(
     filepath: str,
     mtime: float,
     size: int = 200,
+    cache_size: int = CACHE_THUMBNAIL_SIZE,
 ) -> Optional[str]:
     """Return the path to a cached thumbnail, generating it if necessary.
 
     Thumbnails are cached in a .thumbnails folder next to each image.
-    The size parameter is ignored - thumbnails are scaled in the view.
+    The size parameter is the display size; cache_size is the actual cached size.
 
     Args:
         filepath: Absolute path to the source image.
         mtime: File modification time (used to invalidate stale cache).
-        size: Ignored (kept for API compatibility).
+        size: Display size (ignored, kept for API compatibility).
+        cache_size: Size in pixels for the cached thumbnail (default 128).
 
     Returns:
         Path to the cached thumbnail JPEG, or None if generation failed.
@@ -64,7 +66,7 @@ def get_or_create_thumbnail(
         return None
 
     cache_dir = _get_cache_dir(filepath)
-    cache_filename = _cache_key(filepath, mtime)
+    cache_filename = _cache_key(filepath, mtime, cache_size)
     cache_path = cache_dir / cache_filename
 
     if cache_path.exists():
@@ -75,8 +77,8 @@ def get_or_create_thumbnail(
             # Convert to RGB for JPEG saving (handles RGBA, P mode, etc.)
             if img.mode not in ("RGB", "L"):
                 img = img.convert("RGB")
-            # Always use fixed cache size
-            img.thumbnail((CACHE_THUMBNAIL_SIZE, CACHE_THUMBNAIL_SIZE), PilImage.LANCZOS)
+            # Always use configured cache size
+            img.thumbnail((cache_size, cache_size), PilImage.LANCZOS)
             img.save(str(cache_path), "JPEG", quality=85, optimize=True)
         return str(cache_path)
     except Exception as e:
@@ -84,10 +86,10 @@ def get_or_create_thumbnail(
         return None
 
 
-def invalidate_cache(filepath: str, mtime: float) -> None:
+def invalidate_cache(filepath: str, mtime: float, cache_size: int = CACHE_THUMBNAIL_SIZE) -> None:
     """Remove a cached thumbnail if it exists."""
     cache_dir = _get_cache_dir(filepath)
-    cache_filename = _cache_key(filepath, mtime)
+    cache_filename = _cache_key(filepath, mtime, cache_size)
     cache_path = cache_dir / cache_filename
     if cache_path.exists():
         cache_path.unlink()

@@ -315,6 +315,8 @@ class MainWindow(Gtk.ApplicationWindow):
 
     def show_settings(self) -> None:
         """Show a settings dialog."""
+        from .config import get_default_config
+        
         dialog = Gtk.MessageDialog(
             transient_for=self,
             modal=True,
@@ -364,6 +366,23 @@ class MainWindow(Gtk.ApplicationWindow):
         mult_box.append(mult_value)
         content.append(mult_box)
         
+        # Thumbnail cache size
+        cache_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        cache_label = Gtk.Label(label="Thumbnail cache size (pixels):")
+        cache_box.append(cache_label)
+        
+        cache_scale = Gtk.Scale()
+        cache_scale.set_digits(0)
+        cache_scale.set_range(64, 512)
+        cache_scale.set_value(self.config.thumbnail_cache_size)
+        cache_scale.set_size_request(150, 24)
+        cache_box.append(cache_scale)
+        
+        cache_value = Gtk.Label(label=f"{self.config.thumbnail_cache_size}px")
+        cache_scale.connect("value-changed", lambda s: cache_value.set_label(f"{int(s.get_value())}px"))
+        cache_box.append(cache_value)
+        content.append(cache_box)
+        
         # Buttons
         btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         btn_box.set_halign(Gtk.Align.END)
@@ -372,11 +391,22 @@ class MainWindow(Gtk.ApplicationWindow):
             # Save settings
             self.config.slideshow_time = time_scale.get_value()
             self.config.rating_multiplier = mult_scale.get_value()
+            self.config.thumbnail_cache_size = int(cache_scale.get_value())
             
             # Save to config file
             self._save_config()
             
             dialog.destroy()
+        
+        def reset_to_defaults():
+            defaults = get_default_config()
+            time_scale.set_value(defaults.slideshow_time)
+            mult_scale.set_value(defaults.rating_multiplier)
+            cache_scale.set_value(defaults.thumbnail_cache_size)
+        
+        reset_btn = Gtk.Button(label="Reset to Defaults")
+        reset_btn.connect("clicked", lambda _: reset_to_defaults())
+        btn_box.append(reset_btn)
         
         apply_btn = Gtk.Button(label="Apply")
         apply_btn.connect("clicked", lambda _: apply_and_close())
@@ -402,6 +432,7 @@ class MainWindow(Gtk.ApplicationWindow):
 recursive = {str(self.config.recursive).lower()}
 sort = "{self.config.sort}"
 thumbnail_size = {self.config.thumbnail_size}
+thumbnail_cache_size = {self.config.thumbnail_cache_size}
 slideshow_time = {self.config.slideshow_time}
 slideshow_order = "{self.config.slideshow_order}"
 loop = {str(self.config.loop).lower()}
