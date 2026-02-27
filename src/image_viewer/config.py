@@ -1,6 +1,6 @@
 """Configuration loading for image-viewer.
 
-Config file is stored at ~/.config/image-viewer/config.toml.
+Config file is stored at ./config.toml in the app root directory.
 CLI arguments override config file values.
 """
 
@@ -14,8 +14,10 @@ from typing import Any
 from .models import AppConfig
 from .sorting import SORT_NAMES
 
-CONFIG_DIR = Path.home() / ".config" / "image-viewer"
-CONFIG_FILE = CONFIG_DIR / "config.toml"
+# App root directory (parent of the image_viewer package)
+APP_ROOT = Path(__file__).parent.parent.resolve()
+CONFIG_DIR = APP_ROOT
+CONFIG_FILE = APP_ROOT / "config.toml"
 
 _DEFAULT_CONFIG_TOML = """\
 [defaults]

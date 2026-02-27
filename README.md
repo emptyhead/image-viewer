@@ -91,7 +91,7 @@ Options:
 
 ## Configuration
 
-Config file at `~/.config/image-viewer/config.toml`:
+Config file at `./config.toml` in the app root directory:
 
 ```toml
 [defaults]
